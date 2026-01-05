@@ -100,9 +100,13 @@
             </div>
 
             <div class="flex items-center ml-auto gap-4">
-                <div class="text-right mr-4 hidden md:block">
+                <div class="text-right mr-2 hidden md:block">
                     <div class="text-xs text-gray-500 uppercase font-bold tracking-wider">Business Total</div>
                     <div class="text-lg font-bold" :class="businessTotal >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(businessTotal)"></div>
+                    <button @click="emailBusiness()" class="mt-1 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 hover:underline">
+                        <i class="fas fa-envelope"></i>
+                        <span>Email Business</span>
+                    </button>
                 </div>
                 <div class="relative dropdown-menu">
                     <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold cursor-pointer">
@@ -295,6 +299,9 @@
                             <button @click="exportToPDF()" class="bg-purple-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-purple-700 transition-colors">
                                 <i class="fas fa-file-pdf mr-1"></i> Export PDF
                             </button>
+                            <button @click="emailBook()" class="bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 transition-colors">
+                                <i class="fas fa-envelope mr-1"></i> Email Book
+                            </button>
                             <button @click="openTransactionModal()" class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 transition-colors">
                                 <i class="fas fa-plus mr-1"></i> Add Transaction
                             </button>
@@ -313,8 +320,7 @@
                             <button @click="selectedCategory = cat.name" 
                                 class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
                                 :class="selectedCategory === cat.name ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-                                x-text="cat.name + ' (' + cat.count + ')'">
-                            </button>
+                                x-text="cat.name + ' (' + cat.count + ')'"></button>
                         </template>
                     </div>
                 </div>
@@ -348,10 +354,10 @@
                                                     <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-medium" x-text="tx.category || 'General'"></span>
                                                 </div>
                                                 <div class="col-span-2 text-right">
-                                                    <span class="text-red-600 font-bold" x-text="tx.type === 'debit' ? formatCurrency(tx.amount) : '-'"></span>
+                                                    <span class="text-red-600 font-bold" x-text="tx.type === 'debit' ? formatCurrency(tx.amount) : '-' "></span>
                                                 </div>
                                                 <div class="col-span-2 text-right">
-                                                    <span class="text-green-600 font-bold" x-text="tx.type === 'credit' ? formatCurrency(tx.amount) : '-'"></span>
+                                                    <span class="text-green-600 font-bold" x-text="tx.type === 'credit' ? formatCurrency(tx.amount) : '-' "></span>
                                                 </div>
                                                 <div class="col-span-1 text-right">
                                                     <span class="font-bold text-sm" :class="getClosingBalance(group.date, index) >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(getClosingBalance(group.date, index))"></span>
@@ -618,16 +624,32 @@
                 <button @click="showTrashModal = false"><i class="fas fa-times"></i></button>
             </div>
             <div class="p-4 overflow-y-auto max-h-[70vh]">
-                <div class="mb-4 flex gap-2 border-b">
-                    <button @click="trashTab = 'transactions'" class="px-4 py-2 font-medium transition-colors" :class="trashTab === 'transactions' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'">
-                        Transactions (<span x-text="trash.transactions.length"></span>)
-                    </button>
-                    <button @click="trashTab = 'books'" class="px-4 py-2 font-medium transition-colors" :class="trashTab === 'books' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'">
-                        Books (<span x-text="trash.books.length"></span>)
-                    </button>
-                    <button @click="trashTab = 'businesses'" class="px-4 py-2 font-medium transition-colors" :class="trashTab === 'businesses' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'">
-                        Businesses (<span x-text="trash.businesses.length"></span>)
-                    </button>
+                <div class="mb-4 flex items-center gap-2 border-b">
+                    <div class="flex gap-2">
+                        <button @click="trashTab = 'transactions'" class="px-4 py-2 font-medium transition-colors" :class="trashTab === 'transactions' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'">
+                            Transactions (<span x-text="trash.transactions.length"></span>)
+                        </button>
+                        <button @click="trashTab = 'books'" class="px-4 py-2 font-medium transition-colors" :class="trashTab === 'books' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'">
+                            Books (<span x-text="trash.books.length"></span>)
+                        </button>
+                        <button @click="trashTab = 'businesses'" class="px-4 py-2 font-medium transition-colors" :class="trashTab === 'businesses' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'">
+                            Businesses (<span x-text="trash.businesses.length"></span>)
+                        </button>
+                    </div>
+                    <div class="ml-auto flex items-center gap-2 text-xs">
+                        <button
+                            x-show="(trashTab === 'transactions' && trash.transactions.length) || (trashTab === 'books' && trash.books.length) || (trashTab === 'businesses' && trash.businesses.length)"
+                            @click="requestPermanentDeleteBulk(trashTab)"
+                            class="px-3 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50">
+                            Empty <span x-text="trashTabLabel"></span>
+                        </button>
+                        <button
+                            x-show="trashCount > 0"
+                            @click="requestPermanentDeleteAll()"
+                            class="px-3 py-1 rounded border border-red-500 bg-red-500 text-white hover:bg-red-600">
+                            Empty All
+                        </button>
+                    </div>
                 </div>
 
                 <div x-show="trashTab === 'transactions'" class="space-y-2">
@@ -687,6 +709,27 @@
         </div>
     </div>
 
+    <!-- Permanent Delete Authentication Modal -->
+    <div x-show="showPermanentDeleteModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[110]" @click.self="showPermanentDeleteModal = false; permanentDeletePassword = ''; permanentDeleteError = ''; permanentDeleteContext = null;">
+        <div class="bg-white rounded-lg shadow-2xl w-96">
+            <div class="bg-red-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-red-700">Confirm Permanent Delete</h3>
+                <button @click="showPermanentDeleteModal = false; permanentDeletePassword = ''; permanentDeleteError = ''; permanentDeleteContext = null;"><i class="fas fa-times text-red-500"></i></button>
+            </div>
+            <div class="p-4">
+                <p class="text-sm text-gray-700 mb-3">
+                    This action will permanently delete the selected item(s) from Trash. Please enter your password to confirm.
+                </p>
+                <input type="password" x-model="permanentDeletePassword" placeholder="Enter your password" class="w-full border border-gray-300 rounded px-3 py-2 mb-2 outline-none focus:ring-2 focus:ring-red-500">
+                <div x-show="permanentDeleteError" class="text-xs text-red-600 mb-2" x-text="permanentDeleteError"></div>
+                <div class="flex justify-end gap-2 mt-2">
+                    <button @click="showPermanentDeleteModal = false; permanentDeletePassword = ''; permanentDeleteError = ''; permanentDeleteContext = null;" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button @click="confirmPermanentDelete()" class="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700">Delete Forever</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Firebase Configuration
         const firebaseConfig = {
@@ -725,6 +768,10 @@
                 showChangePasswordModal: false,
                 showDeleteAccountModal: false,
                 showTrashModal: false,
+                showPermanentDeleteModal: false,
+                permanentDeletePassword: '',
+                permanentDeleteError: '',
+                permanentDeleteContext: null,
                 newBusinessName: '',
                 newBookName: '',
                 selectedTransactions: [],
@@ -1050,10 +1097,99 @@
                     }
                 },
 
+                // Updated: now just opens auth modal with context
                 permanentlyDeleteTransaction(id) {
-                    if (confirm('Permanently delete this transaction? This cannot be undone.')) {
-                        this.trash.transactions = this.trash.transactions.filter(t => t.id !== id);
+                    this.requestPermanentDelete('transaction', id);
+                },
+
+                permanentlyDeleteBook(id) {
+                    this.requestPermanentDelete('book', id);
+                },
+
+                permanentlyDeleteBusiness(id) {
+                    this.requestPermanentDelete('business', id);
+                },
+
+                requestPermanentDelete(entityType, id) {
+                    this.permanentDeleteContext = {
+                        mode: 'single',
+                        entityType,
+                        id
+                    };
+                    this.permanentDeletePassword = '';
+                    this.permanentDeleteError = '';
+                    this.showPermanentDeleteModal = true;
+                },
+
+                requestPermanentDeleteBulk(tab) {
+                    this.permanentDeleteContext = {
+                        mode: 'bulkTab',
+                        tab
+                    };
+                    this.permanentDeletePassword = '';
+                    this.permanentDeleteError = '';
+                    this.showPermanentDeleteModal = true;
+                },
+
+                requestPermanentDeleteAll() {
+                    this.permanentDeleteContext = {
+                        mode: 'bulkAll'
+                    };
+                    this.permanentDeletePassword = '';
+                    this.permanentDeleteError = '';
+                    this.showPermanentDeleteModal = true;
+                },
+
+                async confirmPermanentDelete() {
+                    try {
+                        this.permanentDeleteError = '';
+
+                        if (!this.permanentDeletePassword) {
+                            this.permanentDeleteError = 'Please enter your password';
+                            return;
+                        }
+
+                        const user = auth.currentUser;
+                        const credential = firebase.auth.EmailAuthProvider.credential(user.email, this.permanentDeletePassword);
+                        await user.reauthenticateWithCredential(credential);
+
+                        const ctx = this.permanentDeleteContext;
+                        if (!ctx) return;
+
+                        if (ctx.mode === 'single') {
+                            if (ctx.entityType === 'transaction') {
+                                this.trash.transactions = this.trash.transactions.filter(t => t.id !== ctx.id);
+                            } else if (ctx.entityType === 'book') {
+                                this.trash.books = this.trash.books.filter(b => b.id !== ctx.id);
+                            } else if (ctx.entityType === 'business') {
+                                this.trash.businesses = this.trash.businesses.filter(b => b.id !== ctx.id);
+                            }
+                        } else if (ctx.mode === 'bulkTab') {
+                            if (ctx.tab === 'transactions') {
+                                this.trash.transactions = [];
+                            } else if (ctx.tab === 'books') {
+                                this.trash.books = [];
+                            } else if (ctx.tab === 'businesses') {
+                                this.trash.businesses = [];
+                            }
+                        } else if (ctx.mode === 'bulkAll') {
+                            this.trash.transactions = [];
+                            this.trash.books = [];
+                            this.trash.businesses = [];
+                        }
+
                         this.save();
+
+                        this.showPermanentDeleteModal = false;
+                        this.permanentDeletePassword = '';
+                        this.permanentDeleteContext = null;
+                        alert('Selected item(s) permanently deleted');
+                    } catch (error) {
+                        if (error.code === 'auth/wrong-password') {
+                            this.permanentDeleteError = 'Incorrect password';
+                        } else {
+                            this.permanentDeleteError = error.message;
+                        }
                     }
                 },
 
@@ -1161,13 +1297,6 @@
                     alert('Business restored!');
                 },
 
-                permanentlyDeleteBusiness(id) {
-                    if (confirm('Permanently delete this business? This cannot be undone.')) {
-                        this.trash.businesses = this.trash.businesses.filter(b => b.id !== id);
-                        this.save();
-                    }
-                },
-
                 startEditingBusiness(id, name) {
                     this.editingBusinessId = id;
                     this.editingBusinessName = name;
@@ -1236,13 +1365,6 @@
                         alert('Book restored!');
                     } else {
                         alert('Original business not found. Book cannot be restored.');
-                    }
-                },
-
-                permanentlyDeleteBook(id) {
-                    if (confirm('Permanently delete this book? This cannot be undone.')) {
-                        this.trash.books = this.trash.books.filter(b => b.id !== id);
-                        this.save();
                     }
                 },
 
@@ -1526,6 +1648,13 @@
                     return this.trash.transactions.length + this.trash.books.length + this.trash.businesses.length;
                 },
 
+                get trashTabLabel() {
+                    if (this.trashTab === 'transactions') return 'Transactions';
+                    if (this.trashTab === 'books') return 'Books';
+                    if (this.trashTab === 'businesses') return 'Businesses';
+                    return '';
+                },
+
                 exportToPDF() {
                     const book = this.activeBook;
                     if (!book) return;
@@ -1633,6 +1762,77 @@
                     `;
                     
                     return html;
+                },
+
+                // Email current book details using mailto
+                emailBook() {
+                    const book = this.activeBook;
+                    const business = this.activeBusiness;
+                    if (!book) {
+                        alert('No active book selected');
+                        return;
+                    }
+
+                    const subject = `LedgerMail - Book Report: ${book.name}${business ? ' (' + business.name + ')' : ''}`;
+                    const summary = this.activeBookSummary;
+
+                    let body = '';
+                    body += 'LedgerMail Book Report' + '\r\n\r\n';
+                    body += 'Business: ' + (business ? business.name : '-') + '\r\n';
+                    body += 'Book: ' + book.name + '\r\n\r\n';
+                    body += 'Summary:' + '\r\n';
+                    body += 'Total Credit: ' + this.formatCurrency(summary.credit) + '\r\n';
+                    body += 'Total Debit: ' + this.formatCurrency(summary.debit) + '\r\n';
+                    body += 'Final Balance: ' + this.formatCurrency(summary.balance) + '\r\n\r\n';
+                    body += 'Transactions:' + '\r\n';
+                    body += 'Date | Type | Amount | Category | Description' + '\r\n';
+
+                    const allTxs = [...book.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    allTxs.forEach(tx => {
+                        body += `${new Date(tx.date).toLocaleDateString('en-IN')} | ${tx.type.toUpperCase()} | ${this.formatCurrency(tx.amount)} | ${tx.category || 'General'} | ${tx.description}` + '\r\n';
+                    });
+
+                    body += '\r\nGenerated on ' + new Date().toLocaleString('en-IN') + ' via LedgerMail';
+
+                    const mailto = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+                    window.location.href = mailto;
+                },
+
+                // Email current business summary
+                emailBusiness() {
+                    const business = this.activeBusiness;
+                    if (!business) {
+                        alert('No active business selected');
+                        return;
+                    }
+
+                    const subject = `LedgerMail - Business Summary: ${business.name}`;
+                    let body = '';
+                    body += 'LedgerMail Business Summary' + '\r\n\r\n';
+                    body += 'Business: ' + business.name + '\r\n\r\n';
+
+                    let overallTotal = 0;
+                    business.books.forEach(book => {
+                        const credit = book.transactions
+                            .filter(t => t.type === 'credit')
+                            .reduce((sum, t) => sum + t.amount, 0);
+                        const debit = book.transactions
+                            .filter(t => t.type === 'debit')
+                            .reduce((sum, t) => sum + t.amount, 0);
+                        const balance = credit - debit;
+                        overallTotal += balance;
+
+                        body += 'Book: ' + book.name + '\r\n';
+                        body += '  Total Credit: ' + this.formatCurrency(credit) + '\r\n';
+                        body += '  Total Debit: ' + this.formatCurrency(debit) + '\r\n';
+                        body += '  Balance: ' + this.formatCurrency(balance) + '\r\n\r\n';
+                    });
+
+                    body += 'Overall Business Net Balance: ' + this.formatCurrency(overallTotal) + '\r\n\r\n';
+                    body += 'Generated on ' + new Date().toLocaleString('en-IN') + ' via LedgerMail';
+
+                    const mailto = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+                    window.location.href = mailto;
                 }
             }
         }
