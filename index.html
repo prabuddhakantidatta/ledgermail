@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LedgerMail - Debit/Credit Manager</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        .gmail-sidebar-item:hover { background-color: #f1f3f4; border-radius: 0 20px 20px 0; }
+        .gmail-sidebar-active { background-color: #fce8e6; color: #d93025; border-radius: 0 20px 20px 0; font-weight: bold; }
+        .transaction-row:hover { box-shadow: inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15); z-index: 10; cursor: pointer; }
+        .dropdown-menu { position: relative; }
+        .dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 50; min-width: 160px; }
+        .dropdown-menu:hover .dropdown-content { display: block; }
+        .dropdown-item { padding: 8px 16px; cursor: pointer; transition: background 0.2s; }
+        .dropdown-item:hover { background: #f1f3f4; }
+    </style>
+</head>
+<body class="bg-[#f6f8fc] text-[#202124] font-sans antialiased" x-data="app()" x-init="init()">
+
+    <!-- Login Screen -->
+    <div x-show="!user" x-cloak class="fixed inset-0 bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center z-[200]">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-96">
+            <div class="text-center mb-6">
+                <div class="bg-red-500 text-white p-3 rounded-lg inline-block mb-3">
+                    <i class="fas fa-book-open text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">LedgerMail</h1>
+                <p class="text-gray-500 text-sm">Secure Debit/Credit Manager</p>
+            </div>
+            
+            <div x-show="authMode === 'login'">
+                <h2 class="text-xl font-semibold mb-4">Login</h2>
+                <input type="email" x-model="authEmail" placeholder="Email" class="w-full border border-gray-300 rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" x-model="authPassword" placeholder="Password" class="w-full border border-gray-300 rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-500">
+                <button @click="login()" class="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 mb-3">Login</button>
+                <div class="text-sm text-center">
+                    <a @click="authMode = 'signup'" class="text-blue-600 cursor-pointer hover:underline">Create Account</a> | 
+                    <a @click="authMode = 'reset'" class="text-blue-600 cursor-pointer hover:underline">Forgot Password?</a>
+                </div>
+            </div>
+            
+            <div x-show="authMode === 'signup'">
+                <h2 class="text-xl font-semibold mb-4">Create Account</h2>
+                <input type="email" x-model="authEmail" placeholder="Email" class="w-full border border-gray-300 rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="password" x-model="authPassword" placeholder="Password (min 6 chars)" class="w-full border border-gray-300 rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-500">
+                <button @click="signup()" class="w-full bg-green-600 text-white py-2 rounded font-medium hover:bg-green-700 mb-3">Sign Up</button>
+                <div class="text-sm text-center">
+                    <a @click="authMode = 'login'" class="text-blue-600 cursor-pointer hover:underline">Back to Login</a>
+                </div>
+            </div>
+            
+            <div x-show="authMode === 'reset'">
+                <h2 class="text-xl font-semibold mb-4">Reset Password</h2>
+                <input type="email" x-model="authEmail" placeholder="Email" class="w-full border border-gray-300 rounded px-3 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-500">
+                <button @click="resetPassword()" class="w-full bg-orange-600 text-white py-2 rounded font-medium hover:bg-orange-700 mb-3">Send Reset Email</button>
+                <div class="text-sm text-center">
+                    <a @click="authMode = 'login'" class="text-blue-600 cursor-pointer hover:underline">Back to Login</a>
+                </div>
+            </div>
+            
+            <div x-show="authError" class="mt-3 p-2 bg-red-100 text-red-700 rounded text-sm text-center" x-text="authError"></div>
+            <div x-show="authSuccess" class="mt-3 p-2 bg-green-100 text-green-700 rounded text-sm text-center" x-text="authSuccess"></div>
+        </div>
+    </div>
+
+    <!-- Main App (only show when logged in) -->
+    <div x-show="user" x-cloak>
+        <!-- Header -->
+        <header class="h-16 flex items-center px-4 bg-white border-b border-gray-200 sticky top-0 z-50">
+            <div class="flex items-center w-64">
+                <button @click="sidebarOpen = !sidebarOpen" class="p-2 mr-2 hover:bg-gray-100 rounded-full text-gray-600">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="flex items-center gap-2">
+                    <div class="bg-red-500 text-white p-1 rounded-lg">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                    <span class="text-xl font-medium text-gray-700">LedgerMail</span>
+                </div>
+            </div>
+            
+            <div class="flex-1 max-w-2xl ml-4">
+                <div class="relative group">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-500"></i>
+                    </div>
+                    <input type="text" x-model="searchQuery" 
+                        class="block w-full bg-[#f1f3f4] border-transparent focus:bg-white focus:ring-1 focus:ring-gray-200 focus:border-transparent rounded-lg py-2 pl-10 pr-3 transition-colors"
+                        placeholder="Search transactions...">
+                </div>
+            </div>
+
+            <div class="flex items-center ml-auto gap-4">
+                <div class="text-right mr-4 hidden md:block">
+                    <div class="text-xs text-gray-500 uppercase font-bold tracking-wider">Business Total</div>
+                    <div class="text-lg font-bold" :class="businessTotal >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(businessTotal)"></div>
+                </div>
+                <div class="relative dropdown-menu">
+                    <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold cursor-pointer">
+                        <span x-text="user ? user.email.charAt(0).toUpperCase() : 'U'"></span>
+                    </div>
+                    <div class="dropdown-content">
+                        <div class="px-4 py-2 border-b text-sm text-gray-600" x-text="user ? user.email : ''"></div>
+                        <div @click="logout()" class="dropdown-item text-red-600">
+                            <i class="fas fa-sign-out-alt mr-2"></i> Logout
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex h-[calc(100vh-4rem)] relative">
+            <!-- Backdrop overlay for mobile -->
+            <div x-show="sidebarOpen" @click="sidebarOpen = false" x-transition:enter="transition-opacity ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black/50 z-30 md:hidden"></div>
+            
+            <!-- Sidebar -->
+            <aside x-show="sidebarOpen" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="-translate-x-full" x-transition:enter-end="translate-x-0" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="translate-x-0" x-transition:leave-end="-translate-x-full" class="w-64 bg-white pt-4 px-2 overflow-y-auto border-r border-gray-200 md:relative absolute inset-y-0 left-0 z-40">
+                <div class="flex gap-2 mb-4 px-2">
+                    <button @click="showBusinessModal = true" class="flex-1 flex items-center justify-center gap-2 bg-white hover:shadow-md transition-shadow py-3 px-4 rounded-2xl text-gray-700 font-medium shadow-sm border border-gray-200">
+                        <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#EA4335" d="M20 13h-7v7h-2v-7H4v-2h7V4h2v7h7v2z"/></svg>
+                        <span class="font-semibold text-sm">Business</span>
+                    </button>
+                    <button @click="showBookModal = true" class="flex-1 flex items-center justify-center gap-2 bg-white hover:shadow-md transition-shadow py-3 px-4 rounded-2xl text-gray-700 font-medium shadow-sm border border-gray-200">
+                        <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#1e8e3e" d="M20 13h-7v7h-2v-7H4v-2h7V4h2v7h7v2z"/></svg>
+                        <span class="font-semibold text-sm">Book</span>
+                    </button>
+                </div>
+
+                <div class="px-2 mb-2 text-xs text-gray-500 font-bold uppercase">Businesses & Books</div>
+
+                <nav class="space-y-1">
+                    <template x-for="business in businesses" :key="business.id">
+                        <div class="mb-2">
+                            <!-- Business Header -->
+                            <div @click="activeBusinessId = business.id" 
+                                class="gmail-sidebar-item flex items-center justify-between px-4 py-2 cursor-pointer group"
+                                :class="activeBusinessId === business.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <i class="fas fa-briefcase flex-shrink-0" :class="activeBusinessId === business.id ? 'text-blue-600' : 'text-gray-600'"></i>
+                                    <span class="truncate font-semibold" x-text="business.name"></span>
+                                </div>
+                                <div class="relative dropdown-menu flex-shrink-0">
+                                    <button @click.stop class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 p-1">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <div class="dropdown-content">
+                                        <div @click.stop="startEditingBusiness(business.id, business.name)" class="dropdown-item">
+                                            <i class="fas fa-edit mr-2"></i> Rename
+                                        </div>
+                                        <div @click.stop="confirmDeleteBusiness(business.id)" class="dropdown-item text-red-600">
+                                            <i class="fas fa-trash mr-2"></i> Delete
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Books under this business -->
+                            <template x-if="activeBusinessId === business.id">
+                                <div class="ml-4 mt-1 space-y-1">
+                                    <template x-for="book in business.books" :key="book.id">
+                                        <div @click="activeBookId = book.id" 
+                                            class="gmail-sidebar-item flex items-center justify-between px-4 py-2 cursor-pointer group"
+                                            :class="activeBookId === book.id ? 'gmail-sidebar-active' : ''">
+                                            <div class="flex items-center gap-3 flex-1 min-w-0">
+                                                <i class="far fa-calendar-alt flex-shrink-0 text-sm" :class="activeBookId === book.id ? 'text-red-600' : 'text-gray-600'"></i>
+                                                <span class="truncate text-sm" x-text="book.name"></span>
+                                            </div>
+                                            <div class="relative dropdown-menu flex-shrink-0">
+                                                <button @click.stop class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 p-1">
+                                                    <i class="fas fa-ellipsis-v text-xs"></i>
+                                                </button>
+                                                <div class="dropdown-content">
+                                                    <div @click.stop="startEditingBook(book.id, book.name)" class="dropdown-item">
+                                                        <i class="fas fa-edit mr-2"></i> Rename
+                                                    </div>
+                                                    <div @click.stop="copyBook(book.id)" class="dropdown-item">
+                                                        <i class="fas fa-copy mr-2"></i> Copy
+                                                    </div>
+                                                    <div @click.stop="moveBook(book.id)" class="dropdown-item">
+                                                        <i class="fas fa-arrow-right mr-2"></i> Move
+                                                    </div>
+                                                    <div @click.stop="confirmDeleteBook(book.id)" class="dropdown-item text-red-600">
+                                                        <i class="fas fa-trash mr-2"></i> Delete
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </nav>
+
+                <div class="mt-8 px-6 pt-4 border-t border-gray-200">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase mb-4">Filter by Category</h3>
+                    <div class="space-y-1 mb-6">
+                        <div @click="selectedCategory = null" 
+                            class="gmail-sidebar-item flex items-center justify-between px-3 py-2 cursor-pointer rounded-lg text-sm"
+                            :class="selectedCategory === null ? 'gmail-sidebar-active' : ''">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-list"></i>
+                                <span>All Categories</span>
+                            </div>
+                            <span class="text-xs text-gray-500" x-text="allTransactionsCount"></span>
+                        </div>
+                        <template x-for="cat in categorySummary" :key="cat.name">
+                            <div @click="selectedCategory = cat.name" 
+                                class="gmail-sidebar-item flex items-center justify-between px-3 py-2 cursor-pointer rounded-lg text-sm"
+                                :class="selectedCategory === cat.name ? 'gmail-sidebar-active' : ''">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-tag text-xs"></i>
+                                    <span x-text="cat.name"></span>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-xs" :class="cat.total >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(cat.total)"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="mt-4 px-6 pt-4 border-t border-gray-200">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase mb-4">Summary</h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Credit:</span>
+                            <span class="text-green-600 font-bold" x-text="formatCurrency(activeBookSummary.credit)"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Debit:</span>
+                            <span class="text-red-600 font-bold" x-text="formatCurrency(activeBookSummary.debit)"></span>
+                        </div>
+                        <div class="flex justify-between border-t pt-2 mt-2">
+                            <span class="font-bold">Net:</span>
+                            <span class="font-bold" :class="activeBookSummary.balance >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(activeBookSummary.balance)"></span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="flex-1 bg-white md:rounded-tl-2xl border-l border-t border-gray-200 overflow-hidden flex flex-col">
+                <!-- Toolbar -->
+                <div class="h-auto border-b border-gray-100 px-4 py-3">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-4">
+                            <template x-if="selectedTransactions.length > 0">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm text-gray-600" x-text="`${selectedTransactions.length} selected`"></span>
+                                    <button @click="showCopyTxModal = true" class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded text-sm font-medium hover:bg-blue-100 transition-colors">
+                                        <i class="fas fa-copy mr-1"></i> Copy
+                                    </button>
+                                    <button @click="showMoveTxModal = true" class="px-3 py-1.5 bg-orange-50 text-orange-600 rounded text-sm font-medium hover:bg-orange-100 transition-colors">
+                                        <i class="fas fa-arrow-right mr-1"></i> Move
+                                    </button>
+                                    <button @click="selectedTransactions = []" class="px-3 py-1.5 text-gray-600 rounded text-sm hover:bg-gray-100">
+                                        Clear
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="showAllEntries = !showAllEntries" 
+                                class="px-4 py-1.5 rounded text-sm font-medium transition-colors"
+                                :class="showAllEntries ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
+                                <i class="fas mr-1" :class="showAllEntries ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                <span x-text="showAllEntries ? 'Showing All' : 'Show All'"></span>
+                            </button>
+                            <button @click="exportToPDF()" class="bg-purple-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-purple-700 transition-colors">
+                                <i class="fas fa-file-pdf mr-1"></i> Export PDF
+                            </button>
+                            <button @click="openTransactionModal()" class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-plus mr-1"></i> Add Transaction
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Filter Pills -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-gray-500 font-medium">Filter:</span>
+                        <button @click="selectedCategory = null" 
+                            class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                            :class="selectedCategory === null ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            All
+                        </button>
+                        <template x-for="cat in categorySummary" :key="cat.name">
+                            <button @click="selectedCategory = cat.name" 
+                                class="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                                :class="selectedCategory === cat.name ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                                x-text="cat.name + ' (' + cat.count + ')'">
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Transaction List -->
+                <div class="flex-1 overflow-y-auto">
+                    <div class="px-4 py-3">
+                        <template x-for="group in groupedTransactions" :key="group.date">
+                            <div class="mb-6">
+                                <!-- Date Header -->
+                                <div class="sticky top-0 bg-gray-100 px-4 py-2 rounded-lg mb-2 flex justify-between items-center">
+                                    <h3 class="font-bold text-gray-700" x-text="formatDateHeader(group.date)"></h3>
+                                    <div class="text-sm text-gray-600">
+                                        <span class="mr-4">Debit: <span class="text-red-600 font-medium" x-text="formatCurrency(group.totalDebit)"></span></span>
+                                        <span>Credit: <span class="text-green-600 font-medium" x-text="formatCurrency(group.totalCredit)"></span></span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Transactions for this date -->
+                                <div class="space-y-1">
+                                    <template x-for="(tx, index) in group.transactions" :key="tx.id">
+                                        <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 hover:shadow-md transition-shadow group flex items-center gap-4">
+                                            <input type="checkbox" class="rounded border-gray-300" :value="tx.id" x-model="selectedTransactions">
+                                            
+                                            <div class="flex-1 grid grid-cols-12 gap-4 items-center">
+                                                <div class="col-span-4">
+                                                    <div class="font-medium text-gray-900" x-text="tx.description"></div>
+                                                    <div class="text-xs text-gray-500" x-text="tx.category || 'General'"></div>
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-medium" x-text="tx.category || 'General'"></span>
+                                                </div>
+                                                <div class="col-span-2 text-right">
+                                                    <span class="text-red-600 font-bold" x-text="tx.type === 'debit' ? formatCurrency(tx.amount) : '-'"></span>
+                                                </div>
+                                                <div class="col-span-2 text-right">
+                                                    <span class="text-green-600 font-bold" x-text="tx.type === 'credit' ? formatCurrency(tx.amount) : '-'"></span>
+                                                </div>
+                                                <div class="col-span-1 text-right">
+                                                    <span class="font-bold text-sm" :class="getClosingBalance(group.date, index) >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(getClosingBalance(group.date, index))"></span>
+                                                </div>
+                                                <div class="col-span-1 text-right relative dropdown-menu">
+                                                    <button @click.stop class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 p-1">
+                                                        <i class="fas fa-ellipsis-v"></i>
+                                                    </button>
+                                                    <div class="dropdown-content">
+                                                        <div @click.stop="editTransaction(tx)" class="dropdown-item">
+                                                            <i class="fas fa-edit mr-2"></i> Edit
+                                                        </div>
+                                                        <div @click.stop="copyTransaction(tx)" class="dropdown-item">
+                                                            <i class="fas fa-copy mr-2"></i> Copy
+                                                        </div>
+                                                        <div @click.stop="moveTransaction(tx)" class="dropdown-item">
+                                                            <i class="fas fa-arrow-right mr-2"></i> Move
+                                                        </div>
+                                                        <div @click.stop="deleteTransaction(tx.id)" class="dropdown-item text-red-600">
+                                                            <i class="fas fa-trash mr-2"></i> Delete
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        
+                        <!-- Summary at bottom -->
+                        <template x-if="groupedTransactions.length > 0">
+                            <div class="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-lg p-6 mt-6">
+                                <h3 class="text-lg font-bold text-gray-700 mb-4">Book Summary</h3>
+                                <div class="grid grid-cols-3 gap-4">
+                                    <div class="text-center">
+                                        <div class="text-sm text-gray-600">Total Credit</div>
+                                        <div class="text-2xl font-bold text-green-600" x-text="formatCurrency(activeBookSummary.credit)"></div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-sm text-gray-600">Total Debit</div>
+                                        <div class="text-2xl font-bold text-red-600" x-text="formatCurrency(activeBookSummary.debit)"></div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-sm text-gray-600">Final Balance</div>
+                                        <div class="text-2xl font-bold" :class="activeBookSummary.balance >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(activeBookSummary.balance)"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                        
+                        <template x-if="groupedTransactions.length === 0">
+                            <div class="py-20 text-center text-gray-500">
+                                <i class="fas fa-inbox text-5xl mb-4 block opacity-20"></i>
+                                No transactions found in this book.
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Rename Modal -->
+    <div x-show="editingBusinessId || editingBookId" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click.self="cancelEditing()">
+        <div class="bg-white rounded-lg shadow-2xl w-96">
+            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-gray-700">Rename <span x-text="editingBusinessId ? 'Business' : 'Book'"></span></h3>
+                <button @click="cancelEditing()"><i class="fas fa-times text-gray-500"></i></button>
+            </div>
+            <div class="p-4">
+                <input type="text" x-model="editingBusinessId ? editingBusinessName : editingBookName" 
+                    @keydown.enter="editingBusinessId ? saveBusinessName(editingBusinessId) : saveBookName(editingBookId)"
+                    @keydown.escape="cancelEditing()"
+                    class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                <div class="mt-4 flex justify-end gap-2">
+                    <button @click="cancelEditing()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button @click="editingBusinessId ? saveBusinessName(editingBusinessId) : saveBookName(editingBookId)" class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Confirm Modal -->
+    <div x-show="showPasswordConfirm" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[110]" @click.self="showPasswordConfirm = false">
+        <div class="bg-white rounded-lg shadow-2xl w-96">
+            <div class="bg-red-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-red-700">Confirm Deletion</h3>
+                <button @click="showPasswordConfirm = false"><i class="fas fa-times text-red-500"></i></button>
+            </div>
+            <div class="p-4">
+                <p class="text-sm text-gray-600 mb-3">Please enter your password to confirm deletion:</p>
+                <input type="password" x-model="confirmPassword" 
+                    @keydown.enter="executeDelete()"
+                    class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-red-500 outline-none mb-3">
+                <div x-show="deleteError" class="text-sm text-red-600 mb-2" x-text="deleteError"></div>
+                <div class="flex justify-end gap-2">
+                    <button @click="showPasswordConfirm = false; confirmPassword = ''; deleteError = ''" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button @click="executeDelete()" class="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy/Move Transaction Modals -->
+    <div x-show="showCopyTxModal || showMoveTxModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click.self="showCopyTxModal = false; showMoveTxModal = false">
+        <div class="bg-white rounded-lg shadow-2xl w-96 overflow-hidden">
+            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-gray-700" x-text="showCopyTxModal ? 'Copy Transactions To' : 'Move Transactions To'"></h3>
+                <button @click="showCopyTxModal = false; showMoveTxModal = false"><i class="fas fa-times text-gray-500"></i></button>
+            </div>
+            <div class="p-4">
+                <div class="space-y-3 max-h-64 overflow-y-auto">
+                    <template x-for="business in businesses" :key="business.id">
+                        <div>
+                            <div class="text-xs font-bold text-gray-500 uppercase mb-1 px-2" x-text="business.name"></div>
+                            <template x-for="book in business.books" :key="book.id">
+                                <button @click="showCopyTxModal ? copyToBook(book.id) : moveToBook(book.id)" 
+                                    class="w-full text-left px-4 py-2 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors mb-1"
+                                    :class="book.id === activeBookId ? 'bg-gray-50' : 'bg-white'">
+                                    <div class="font-medium text-gray-900 text-sm" x-text="book.name"></div>
+                                </button>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy/Move Book Modals -->
+    <div x-show="showCopyBookModal || showMoveBookModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click.self="showCopyBookModal = false; showMoveBookModal = false">
+        <div class="bg-white rounded-lg shadow-2xl w-96 overflow-hidden">
+            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-gray-700" x-text="showCopyBookModal ? 'Copy Book To Business' : 'Move Book To Business'"></h3>
+                <button @click="showCopyBookModal = false; showMoveBookModal = false"><i class="fas fa-times text-gray-500"></i></button>
+            </div>
+            <div class="p-4">
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                    <template x-for="business in businesses" :key="business.id">
+                        <button @click="showCopyBookModal ? copyBookToBusiness(business.id) : moveBookToBusiness(business.id)" 
+                            class="w-full text-left px-4 py-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors">
+                            <div class="font-medium text-gray-900" x-text="business.name"></div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Business Modal -->
+    <div x-show="showBusinessModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click.self="showBusinessModal = false">
+        <div class="bg-white rounded-lg shadow-2xl w-96">
+            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-gray-700">Create New Business</h3>
+                <button @click="showBusinessModal = false"><i class="fas fa-times text-gray-500"></i></button>
+            </div>
+            <div class="p-4">
+                <input type="text" x-model="newBusinessName" @keydown.enter="createBusiness" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Enter business name...">
+                <div class="mt-6 flex justify-end gap-2">
+                    <button @click="showBusinessModal = false" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button @click="createBusiness" class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Book Modal -->
+    <div x-show="showBookModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click.self="showBookModal = false">
+        <div class="bg-white rounded-lg shadow-2xl w-96">
+            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium text-gray-700">Create New Book</h3>
+                <button @click="showBookModal = false"><i class="fas fa-times text-gray-500"></i></button>
+            </div>
+            <div class="p-4">
+                <input type="text" x-model="newBookName" @keydown.enter="createBook" class="w-full border border-gray-300 rounded px-3 py-2 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="e.g., October 2023">
+                <div class="mt-6 flex justify-end gap-2">
+                    <button @click="showBookModal = false" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button @click="createBook" class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Modal -->
+    <div x-show="showTransactionModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" @click.self="showTransactionModal = false">
+        <div class="bg-white rounded-lg shadow-2xl w-[500px]">
+            <div class="bg-gray-800 text-white px-4 py-3 flex justify-between items-center">
+                <h3 class="font-medium" x-text="editingTx ? 'Edit Transaction' : 'New Transaction'"></h3>
+                <button @click="showTransactionModal = false; editingTx = null"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Book</label>
+                    <select x-model="newTx.bookId" class="w-full border border-gray-300 rounded px-3 py-2 outline-none bg-blue-50 font-medium">
+                        <template x-for="book in books" :key="book.id">
+                            <option :value="book.id" x-text="book.name"></option>
+                        </template>
+                    </select>
+                </div>
+                
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
+                        <select x-model="newTx.type" class="w-full border border-gray-300 rounded px-3 py-2 outline-none">
+                            <option value="debit">Debit (-)</option>
+                            <option value="credit">Credit (+)</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
+                        <input type="date" x-model="newTx.date" class="w-full border border-gray-300 rounded px-3 py-2 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
+                    <input type="text" x-model="newTx.description" class="w-full border border-gray-300 rounded px-3 py-2 outline-none" placeholder="What was this for?">
+                </div>
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Amount</label>
+                        <input type="number" step="0.01" x-model="newTx.amount" class="w-full border border-gray-300 rounded px-3 py-2 outline-none" placeholder="0.00">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
+                        <input type="text" x-model="newTx.category" class="w-full border border-gray-300 rounded px-3 py-2 outline-none" placeholder="Food, Rent, etc.">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-4">
+                    <button @click="showTransactionModal = false; editingTx = null" class="px-6 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button @click="saveTransaction()" class="px-6 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                        <span x-text="editingTx ? 'Update' : 'Add'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        function app() {
+            return {
+                user: null,
+                authMode: 'login',
+                authEmail: '',
+                authPassword: '',
+                authError: '',
+                authSuccess: '',
+                businesses: [],
+                activeBusinessId: null,
+                activeBookId: null,
+                searchQuery: '',
+                selectedCategory: null,
+                showBusinessModal: false,
+                showBookModal: false,
+                showTransactionModal: false,
+                showCopyTxModal: false,
+                showMoveTxModal: false,
+                showCopyBookModal: false,
+                showMoveBookModal: false,
+                showPasswordConfirm: false,
+                newBusinessName: '',
+                newBookName: '',
+                selectedTransactions: [],
+                showAllEntries: false,
+                editingBookId: null,
+                editingBookName: '',
+                editingBusinessId: null,
+                editingBusinessName: '',
+                editingTx: null,
+                sidebarOpen: true,
+                copiedBookId: null,
+                confirmPassword: '',
+                deleteAction: null,
+                deleteError: '',
+                newTx: {
+                    bookId: null,
+                    type: 'debit',
+                    date: new Date().toISOString().split('T')[0],
+                    description: '',
+                    amount: '',
+                    category: ''
+                },
+
+                init() {
+                    auth.onAuthStateChanged((user) => {
+                        this.user = user;
+                        if (user) {
+                            this.loadData();
+                        }
+                    });
+                },
+
+                async login() {
+                    try {
+                        this.authError = '';
+                        await auth.signInWithEmailAndPassword(this.authEmail, this.authPassword);
+                        this.authSuccess = 'Login successful!';
+                        setTimeout(() => this.authSuccess = '', 2000);
+                    } catch (error) {
+                        this.authError = error.message;
+                    }
+                },
+
+                async signup() {
+                    try {
+                        this.authError = '';
+                        await auth.createUserWithEmailAndPassword(this.authEmail, this.authPassword);
+                        this.authSuccess = 'Account created! Logging you in...';
+                        setTimeout(() => this.authSuccess = '', 2000);
+                    } catch (error) {
+                        this.authError = error.message;
+                    }
+                },
+
+                async resetPassword() {
+                    try {
+                        this.authError = '';
+                        await auth.sendPasswordResetEmail(this.authEmail);
+                        this.authSuccess = 'Password reset email sent!';
+                        setTimeout(() => {
+                            this.authSuccess = '';
+                            this.authMode = 'login';
+                        }, 3000);
+                    } catch (error) {
+                        this.authError = error.message;
+                    }
+                },
+
+                async logout() {
+                    await auth.signOut();
+                    this.businesses = [];
+                    this.activeBusinessId = null;
+                    this.activeBookId = null;
+                },
+
+                loadData() {
+                    const saved = localStorage.getItem(`ledgermail_${this.user.uid}`);
+                    if (saved) {
+                        this.businesses = JSON.parse(saved);
+                        if (this.businesses.length > 0) {
+                            this.activeBusinessId = this.businesses[0].id;
+                            if (this.businesses[0].books.length > 0) {
+                                this.activeBookId = this.businesses[0].books[0].id;
+                            }
+                        }
+                    } else {
+                        this.businesses = [{
+                            id: Date.now(),
+                            name: 'Default Business',
+                            books: [{
+                                id: Date.now() + 1,
+                                name: 'Current Month',
+                                transactions: []
+                            }]
+                        }];
+                        this.activeBusinessId = this.businesses[0].id;
+                        this.activeBookId = this.businesses[0].books[0].id;
+                        this.save();
+                    }
+                },
+
+                save() {
+                    if (this.user) {
+                        localStorage.setItem(`ledgermail_${this.user.uid}`, JSON.stringify(this.businesses));
+                    }
+                },
+
+                formatCurrency(val) {
+                    return new Intl.NumberFormat('en-IN', {
+                        style: 'currency',
+                        currency: 'INR'
+                    }).format(val || 0);
+                },
+
+                openTransactionModal() {
+                    this.editingTx = null;
+                    this.newTx = {
+                        bookId: this.activeBookId,
+                        type: 'debit',
+                        date: new Date().toISOString().split('T')[0],
+                        description: '',
+                        amount: '',
+                        category: ''
+                    };
+                    this.showTransactionModal = true;
+                },
+
+                editTransaction(tx) {
+                    this.editingTx = tx;
+                    this.newTx = {
+                        bookId: this.activeBookId,
+                        type: tx.type,
+                        date: tx.date,
+                        description: tx.description,
+                        amount: tx.amount,
+                        category: tx.category
+                    };
+                    this.showTransactionModal = true;
+                },
+
+                saveTransaction() {
+                    if (!this.newTx.description || !this.newTx.amount) return;
+                    
+                    const business = this.activeBusiness;
+                    if (!business) return;
+
+                    const targetBookId = this.newTx.bookId || this.activeBookId;
+                    const book = business.books.find(b => b.id === targetBookId);
+                    if (!book) return;
+
+                    if (this.editingTx) {
+                        // Update existing transaction
+                        Object.assign(this.editingTx, {
+                            type: this.newTx.type,
+                            date: this.newTx.date,
+                            description: this.newTx.description,
+                            amount: parseFloat(this.newTx.amount),
+                            category: this.newTx.category
+                        });
+                    } else {
+                        // Add new transaction
+                        book.transactions.unshift({
+                            id: Date.now(),
+                            type: this.newTx.type,
+                            date: this.newTx.date,
+                            description: this.newTx.description,
+                            amount: parseFloat(this.newTx.amount),
+                            category: this.newTx.category
+                        });
+                    }
+
+                    this.showTransactionModal = false;
+                    this.editingTx = null;
+                    this.save();
+                },
+
+                deleteTransaction(txId) {
+                    if (confirm('Delete this transaction?')) {
+                        const book = this.activeBook;
+                        if (book) {
+                            book.transactions = book.transactions.filter(t => t.id !== txId);
+                            this.save();
+                        }
+                    }
+                },
+
+                copyTransaction(tx) {
+                    this.selectedTransactions = [tx.id];
+                    this.showCopyTxModal = true;
+                },
+
+                moveTransaction(tx) {
+                    this.selectedTransactions = [tx.id];
+                    this.showMoveTxModal = true;
+                },
+
+                copyToBook(targetBookId) {
+                    let targetBook = null;
+                    for (const business of this.businesses) {
+                        const book = business.books.find(b => b.id === targetBookId);
+                        if (book) {
+                            targetBook = book;
+                            break;
+                        }
+                    }
+
+                    const sourceBook = this.activeBook;
+                    if (!targetBook || !sourceBook) return;
+
+                    const txsToCopy = sourceBook.transactions.filter(t => this.selectedTransactions.includes(t.id));
+                    txsToCopy.forEach(tx => {
+                        targetBook.transactions.unshift({
+                            ...tx,
+                            id: Date.now() + Math.random()
+                        });
+                    });
+
+                    this.selectedTransactions = [];
+                    this.showCopyTxModal = false;
+                    this.save();
+                    alert(`${txsToCopy.length} transaction(s) copied!`);
+                },
+
+                moveToBook(targetBookId) {
+                    let targetBook = null;
+                    for (const business of this.businesses) {
+                        const book = business.books.find(b => b.id === targetBookId);
+                        if (book) {
+                            targetBook = book;
+                            break;
+                        }
+                    }
+
+                    const sourceBook = this.activeBook;
+                    if (!targetBook || !sourceBook || targetBookId === this.activeBookId) return;
+
+                    const txsToMove = sourceBook.transactions.filter(t => this.selectedTransactions.includes(t.id));
+                    txsToMove.forEach(tx => {
+                        targetBook.transactions.unshift(tx);
+                    });
+
+                    sourceBook.transactions = sourceBook.transactions.filter(t => !this.selectedTransactions.includes(t.id));
+                    
+                    this.selectedTransactions = [];
+                    this.showMoveTxModal = false;
+                    this.save();
+                    alert(`${txsToMove.length} transaction(s) moved!`);
+                },
+
+                createBusiness() {
+                    if (!this.newBusinessName.trim()) return;
+                    const newBusiness = {
+                        id: Date.now(),
+                        name: this.newBusinessName.trim(),
+                        books: []
+                    };
+                    this.businesses.push(newBusiness);
+                    this.activeBusinessId = newBusiness.id;
+                    this.newBusinessName = '';
+                    this.showBusinessModal = false;
+                    this.save();
+                },
+
+                confirmDeleteBusiness(id) {
+                    this.deleteAction = () => {
+                        this.businesses = this.businesses.filter(b => b.id !== id);
+                        if (this.activeBusinessId === id) {
+                            this.activeBusinessId = this.businesses.length > 0 ? this.businesses[0].id : null;
+                            this.activeBookId = null;
+                        }
+                        this.save();
+                    };
+                    this.showPasswordConfirm = true;
+                },
+
+                startEditingBusiness(id, name) {
+                    this.editingBusinessId = id;
+                    this.editingBusinessName = name;
+                },
+
+                saveBusinessName(id) {
+                    if (this.editingBusinessName.trim()) {
+                        const business = this.businesses.find(b => b.id === id);
+                        if (business) {
+                            business.name = this.editingBusinessName.trim();
+                            this.save();
+                        }
+                    }
+                    this.cancelEditing();
+                },
+
+                createBook() {
+                    if (!this.newBookName.trim()) return;
+                    const business = this.activeBusiness;
+                    if (!business) {
+                        alert('Please select or create a business first');
+                        return;
+                    }
+
+                    const newBook = {
+                        id: Date.now(),
+                        name: this.newBookName.trim(),
+                        transactions: []
+                    };
+                    business.books.push(newBook);
+                    this.activeBookId = newBook.id;
+                    this.newBookName = '';
+                    this.showBookModal = false;
+                    this.save();
+                },
+
+                confirmDeleteBook(id) {
+                    this.deleteAction = () => {
+                        const business = this.activeBusiness;
+                        if (business) {
+                            business.books = business.books.filter(b => b.id !== id);
+                            if (this.activeBookId === id) {
+                                this.activeBookId = business.books.length > 0 ? business.books[0].id : null;
+                            }
+                            this.save();
+                        }
+                    };
+                    this.showPasswordConfirm = true;
+                },
+
+                startEditingBook(id, name) {
+                    this.editingBookId = id;
+                    this.editingBookName = name;
+                },
+
+                saveBookName(id) {
+                    if (this.editingBookName.trim()) {
+                        const business = this.activeBusiness;
+                        if (business) {
+                            const book = business.books.find(b => b.id === id);
+                            if (book) {
+                                book.name = this.editingBookName.trim();
+                                this.save();
+                            }
+                        }
+                    }
+                    this.cancelEditing();
+                },
+
+                cancelEditing() {
+                    this.editingBusinessId = null;
+                    this.editingBusinessName = '';
+                    this.editingBookId = null;
+                    this.editingBookName = '';
+                },
+
+                copyBook(bookId) {
+                    this.copiedBookId = bookId;
+                    this.showCopyBookModal = true;
+                },
+
+                moveBook(bookId) {
+                    this.copiedBookId = bookId;
+                    this.showMoveBookModal = true;
+                },
+
+                copyBookToBusiness(targetBusinessId) {
+                    const sourceBusiness = this.activeBusiness;
+                    if (!sourceBusiness) return;
+
+                    const sourceBook = sourceBusiness.books.find(b => b.id === this.copiedBookId);
+                    const targetBusiness = this.businesses.find(b => b.id === targetBusinessId);
+
+                    if (!sourceBook || !targetBusiness) return;
+
+                    const copiedBook = {
+                        id: Date.now(),
+                        name: sourceBook.name + ' (Copy)',
+                        transactions: sourceBook.transactions.map(tx => ({
+                            ...tx,
+                            id: Date.now() + Math.random()
+                        }))
+                    };
+
+                    targetBusiness.books.push(copiedBook);
+                    this.showCopyBookModal = false;
+                    this.save();
+                    alert(`Book copied to ${targetBusiness.name}!`);
+                },
+
+                moveBookToBusiness(targetBusinessId) {
+                    const sourceBusiness = this.activeBusiness;
+                    if (!sourceBusiness || targetBusinessId === this.activeBusinessId) return;
+
+                    const sourceBook = sourceBusiness.books.find(b => b.id === this.copiedBookId);
+                    const targetBusiness = this.businesses.find(b => b.id === targetBusinessId);
+
+                    if (!sourceBook || !targetBusiness) return;
+
+                    targetBusiness.books.push(sourceBook);
+                    sourceBusiness.books = sourceBusiness.books.filter(b => b.id !== this.copiedBookId);
+                    
+                    if (this.activeBookId === this.copiedBookId) {
+                        this.activeBookId = sourceBusiness.books.length > 0 ? sourceBusiness.books[0].id : null;
+                    }
+
+                    this.showMoveBookModal = false;
+                    this.save();
+                    alert(`Book moved to ${targetBusiness.name}!`);
+                },
+
+                async executeDelete() {
+                    try {
+                        this.deleteError = '';
+                        const credential = firebase.auth.EmailAuthProvider.credential(
+                            this.user.email,
+                            this.confirmPassword
+                        );
+                        await this.user.reauthenticateWithCredential(credential);
+                        
+                        if (this.deleteAction) {
+                            this.deleteAction();
+                        }
+                        
+                        this.showPasswordConfirm = false;
+                        this.confirmPassword = '';
+                        this.deleteAction = null;
+                    } catch (error) {
+                        this.deleteError = 'Incorrect password';
+                    }
+                },
+
+                getClosingBalance(date, index) {
+                    const book = this.activeBook;
+                    if (!book) return 0;
+
+                    let balance = 0;
+                    const allTxs = [...book.transactions].sort((a, b) => {
+                        const dateCompare = new Date(a.date) - new Date(b.date);
+                        return dateCompare !== 0 ? dateCompare : a.id - b.id;
+                    });
+
+                    const grouped = {};
+                    allTxs.forEach(tx => {
+                        if (!grouped[tx.date]) grouped[tx.date] = [];
+                        grouped[tx.date].push(tx);
+                    });
+
+                    for (const [txDate, txs] of Object.entries(grouped)) {
+                        if (txDate < date) {
+                            txs.forEach(tx => {
+                                if (tx.type === 'credit') balance += tx.amount;
+                                else balance -= tx.amount;
+                            });
+                        } else if (txDate === date) {
+                            for (let i = 0; i <= index; i++) {
+                                const tx = txs[i];
+                                if (tx.type === 'credit') balance += tx.amount;
+                                else balance -= tx.amount;
+                            }
+                            break;
+                        }
+                    }
+
+                    return balance;
+                },
+
+                formatDateHeader(dateStr) {
+                    const date = new Date(dateStr);
+                    const today = new Date();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+
+                    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                    const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    const yesterdayOnly = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+
+                    if (dateOnly.getTime() === todayOnly.getTime()) {
+                        return 'Today - ' + date.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                    } else if (dateOnly.getTime() === yesterdayOnly.getTime()) {
+                        return 'Yesterday - ' + date.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                    } else {
+                        return date.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                    }
+                },
+
+                get filteredTransactions() {
+                    const book = this.activeBook;
+                    if (!book) return [];
+                    
+                    let transactions = book.transactions;
+
+                    if (this.selectedCategory) {
+                        transactions = transactions.filter(t => 
+                            (t.category || 'General') === this.selectedCategory
+                        );
+                    }
+
+                    if (this.searchQuery) {
+                        const q = this.searchQuery.toLowerCase();
+                        transactions = transactions.filter(t => 
+                            t.description.toLowerCase().includes(q) || 
+                            (t.category && t.category.toLowerCase().includes(q))
+                        );
+                    }
+
+                    return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+                },
+
+                get groupedTransactions() {
+                    const transactions = this.filteredTransactions;
+                    const grouped = {};
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    transactions.forEach(tx => {
+                        if (!grouped[tx.date]) {
+                            grouped[tx.date] = {
+                                date: tx.date,
+                                transactions: [],
+                                totalDebit: 0,
+                                totalCredit: 0
+                            };
+                        }
+                        grouped[tx.date].transactions.push(tx);
+                        if (tx.type === 'debit') {
+                            grouped[tx.date].totalDebit += tx.amount;
+                        } else {
+                            grouped[tx.date].totalCredit += tx.amount;
+                        }
+                    });
+
+                    let result = Object.values(grouped).sort((a, b) => {
+                        return new Date(b.date) - new Date(a.date);
+                    });
+
+                    if (!this.showAllEntries) {
+                        result = result.filter(group => {
+                            const groupDate = new Date(group.date);
+                            groupDate.setHours(0, 0, 0, 0);
+                            return groupDate >= today;
+                        });
+                    }
+
+                    return result;
+                },
+
+                get activeBusiness() {
+                    return this.businesses.find(b => b.id === this.activeBusinessId);
+                },
+
+                get activeBook() {
+                    const business = this.activeBusiness;
+                    if (!business) return null;
+                    return business.books.find(b => b.id === this.activeBookId);
+                },
+
+                get books() {
+                    const business = this.activeBusiness;
+                    return business ? business.books : [];
+                },
+
+                get activeBookSummary() {
+                    const book = this.activeBook;
+                    if (!book) return { credit: 0, debit: 0, balance: 0 };
+
+                    const credit = book.transactions
+                        .filter(t => t.type === 'credit')
+                        .reduce((sum, t) => sum + t.amount, 0);
+                    const debit = book.transactions
+                        .filter(t => t.type === 'debit')
+                        .reduce((sum, t) => sum + t.amount, 0);
+
+                    return {
+                        credit,
+                        debit,
+                        balance: credit - debit
+                    };
+                },
+
+                get businessTotal() {
+                    const business = this.activeBusiness;
+                    if (!business) return 0;
+                    
+                    return business.books.reduce((total, book) => {
+                        const credit = book.transactions
+                            .filter(t => t.type === 'credit')
+                            .reduce((sum, t) => sum + t.amount, 0);
+                        const debit = book.transactions
+                            .filter(t => t.type === 'debit')
+                            .reduce((sum, t) => sum + t.amount, 0);
+                        return total + (credit - debit);
+                    }, 0);
+                },
+
+                get categorySummary() {
+                    const book = this.activeBook;
+                    if (!book) return [];
+
+                    const categoryMap = {};
+                    
+                    book.transactions.forEach(tx => {
+                        const cat = tx.category || 'General';
+                        if (!categoryMap[cat]) {
+                            categoryMap[cat] = { name: cat, credit: 0, debit: 0, total: 0, count: 0 };
+                        }
+                        
+                        if (tx.type === 'credit') {
+                            categoryMap[cat].credit += tx.amount;
+                        } else {
+                            categoryMap[cat].debit += tx.amount;
+                        }
+                        categoryMap[cat].count++;
+                    });
+
+                    Object.values(categoryMap).forEach(cat => {
+                        cat.total = cat.credit - cat.debit;
+                    });
+
+                    return Object.values(categoryMap).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+                },
+
+                get allTransactionsCount() {
+                    const book = this.activeBook;
+                    return book ? book.transactions.length : 0;
+                },
+
+                exportToPDF() {
+                    const book = this.activeBook;
+                    if (!book) return;
+
+                    const printWindow = window.open('', '', 'width=800,height=600');
+                    
+                    const htmlContent = `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>${book.name} - Transaction Report</title>
+                            <style>
+                                body { font-family: Arial, sans-serif; margin: 40px; }
+                                h1 { color: #333; border-bottom: 3px solid #4285f4; padding-bottom: 10px; }
+                                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                                th { background: #4285f4; color: white; padding: 12px; text-align: left; font-size: 11px; }
+                                td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 11px; }
+                                .debit { color: #d93025; font-weight: bold; }
+                                .credit { color: #1e8e3e; font-weight: bold; }
+                                .summary-box { background: #f1f3f4; padding: 20px; border-radius: 8px; margin: 20px 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+                                .summary-item { text-align: center; }
+                                .summary-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+                                .summary-value { font-size: 24px; font-weight: bold; }
+                                @media print { button { display: none; } }
+                            </style>
+                        </head>
+                        <body>
+                            <h1>📖 ${book.name} - Transaction Report</h1>
+                            
+                            ${this.generatePDFContent(book)}
+                            
+                            <div class="summary-box">
+                                <div class="summary-item">
+                                    <div class="summary-label">Total Credit</div>
+                                    <div class="summary-value credit">${this.formatCurrency(this.activeBookSummary.credit)}</div>
+                                </div>
+                                <div class="summary-item">
+                                    <div class="summary-label">Total Debit</div>
+                                    <div class="summary-value debit">${this.formatCurrency(this.activeBookSummary.debit)}</div>
+                                </div>
+                                <div class="summary-item">
+                                    <div class="summary-label">Final Balance</div>
+                                    <div class="summary-value ${this.activeBookSummary.balance >= 0 ? 'credit' : 'debit'}">${this.formatCurrency(this.activeBookSummary.balance)}</div>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 30px; text-align: center;">
+                                <button onclick="window.print()" style="background: #4285f4; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px;">
+                                    🖨️ Print / Save as PDF
+                                </button>
+                                <button onclick="window.close()" style="background: #5f6368; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-left: 10px;">
+                                    Close
+                                </button>
+                            </div>
+                            
+                            <div style="margin-top: 40px; text-align: center; color: #666; font-size: 12px;">
+                                Generated on ${new Date().toLocaleString('en-IN')} | LedgerMail
+                            </div>
+                        </body>
+                        </html>
+                    `;
+                    
+                    printWindow.document.write(htmlContent);
+                    printWindow.document.close();
+                },
+
+                generatePDFContent(book) {
+                    const allTxs = [...book.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    let html = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Category</th>
+                                    <th>Debit</th>
+                                    <th>Credit</th>
+                                    <th>Closing Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    let balance = 0;
+                    allTxs.forEach((tx) => {
+                        if (tx.type === 'credit') balance += tx.amount;
+                        else balance -= tx.amount;
+                        
+                        html += `
+                            <tr>
+                                <td>${new Date(tx.date).toLocaleDateString('en-IN')}</td>
+                                <td>${tx.description}</td>
+                                <td>${tx.category || 'General'}</td>
+                                <td class="debit">${tx.type === 'debit' ? this.formatCurrency(tx.amount) : '-'}</td>
+                                <td class="credit">${tx.type === 'credit' ? this.formatCurrency(tx.amount) : '-'}</td>
+                                <td class="${balance >= 0 ? 'credit' : 'debit'}" style="font-weight: bold;">${this.formatCurrency(balance)}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                            </tbody>
+                        </table>
+                    `;
+                    
+                    return html;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
